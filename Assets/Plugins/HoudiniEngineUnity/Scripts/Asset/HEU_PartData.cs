@@ -78,6 +78,11 @@ namespace HoudiniEngineUnity
 		public bool IsPartInstancer() { return _partType == HAPI_PartType.HAPI_PARTTYPE_INSTANCER; }
 
 		[SerializeField]
+		private bool _isAttribInstancer;
+
+		public bool IsAttribInstancer() { return _isAttribInstancer; }
+
+		[SerializeField]
 		private bool _isPartInstanced;
 
 		public bool IsPartInstanced() { return _isPartInstanced; }
@@ -172,7 +177,7 @@ namespace HoudiniEngineUnity
 		}
 
 		public void Initialize(HEU_SessionBase session, HAPI_PartId partID, HAPI_NodeId geoID, HAPI_NodeId objectNodeID, HEU_GeoNode geoNode, 
-			ref HAPI_PartInfo partInfo, HEU_PartData.PartOutputType partOutputType, bool isEditable, bool isObjectInstancer)
+			ref HAPI_PartInfo partInfo, HEU_PartData.PartOutputType partOutputType, bool isEditable, bool isObjectInstancer, bool isAttribInstancer)
 		{
 			_partID = partID;
 			_geoID = geoID;
@@ -186,6 +191,7 @@ namespace HoudiniEngineUnity
 			_partPointCount = partInfo.pointCount;
 			_isPartEditable = isEditable;
 			_meshVertexCount = partInfo.vertexCount;
+			_isAttribInstancer = isAttribInstancer;
 
 			_isObjectInstancer = isObjectInstancer;
 			_objectInstancesGenerated = false;
@@ -567,15 +573,17 @@ namespace HoudiniEngineUnity
 				{
 					GameObject newInstanceGO = HEU_EditorUtility.InstantiateGameObject(partData.OutputGameObject, partTransform, false, false);
 
-					newInstanceGO.name = GetInstanceOutputName(PartName, instancePrefixes, (j + 1));
+					newInstanceGO.name = HEU_GeometryUtility.GetInstanceOutputName(PartName, instancePrefixes, (j + 1));
 
 					newInstanceGO.isStatic = OutputGameObject.isStatic;
 
-					HEU_HAPIUtility.ApplyLocalTransfromFromHoudiniToUnity(ref instanceTransforms[j], newInstanceGO.transform);
+					HEU_HAPIUtility.ApplyLocalTransfromFromHoudiniToUnityForInstance(ref instanceTransforms[j], newInstanceGO.transform);
 
 					// When cloning, the instanced part might have been made invisible, so re-enable renderer to have the cloned instance display it.
 					HEU_GeneralUtility.SetGameObjectRenderVisiblity(newInstanceGO, true);
 					HEU_GeneralUtility.SetGameObjectChildrenRenderVisibility(newInstanceGO, true);
+					HEU_GeneralUtility.SetGameObjectColliderState(newInstanceGO, true);
+					HEU_GeneralUtility.SetGameObjectChildrenColliderState(newInstanceGO, true);
 				}
 			}
 
@@ -953,12 +961,12 @@ namespace HoudiniEngineUnity
 			}
 
 			// To get the instance output name, we pass in the instance index. The actual name will be +1 from this.
-			newInstanceGO.name = GetInstanceOutputName(PartName, instancePrefixes, instanceIndex);
+			newInstanceGO.name = HEU_GeometryUtility.GetInstanceOutputName(PartName, instancePrefixes, instanceIndex);
 
 			newInstanceGO.isStatic = OutputGameObject.isStatic;
 
 			Transform instanceTransform = newInstanceGO.transform;
-			HEU_HAPIUtility.ApplyLocalTransfromFromHoudiniToUnity(ref hapiTransform, instanceTransform);
+			HEU_HAPIUtility.ApplyLocalTransfromFromHoudiniToUnityForInstance(ref hapiTransform, instanceTransform);
 
 			// Apply offsets
 			Vector3 rotation = instanceTransform.localRotation.eulerAngles;
@@ -968,6 +976,8 @@ namespace HoudiniEngineUnity
 			// When cloning, the instanced part might have been made invisible, so re-enable renderer to have the cloned instance display it.
 			HEU_GeneralUtility.SetGameObjectRenderVisiblity(newInstanceGO, true);
 			HEU_GeneralUtility.SetGameObjectChildrenRenderVisibility(newInstanceGO, true);
+			HEU_GeneralUtility.SetGameObjectColliderState(newInstanceGO, true);
+			HEU_GeneralUtility.SetGameObjectChildrenColliderState(newInstanceGO, true);
 
 			// Add to object instance info map. Find existing object instance info, or create it.
 			HEU_ObjectInstanceInfo instanceInfo = null;
@@ -986,33 +996,6 @@ namespace HoudiniEngineUnity
 			}
 
 			instanceInfo._instances.Add(newInstanceGO);
-		}
-
-		/// <summary>
-		/// Returns the output instance's name for given instance index. 
-		/// The instance name convention is: PartName_Instance1
-		/// User could override the prefix (PartName) with their own via given instancePrefixes array.
-		/// </summary>
-		/// <param name="partName"></param>
-		/// <param name="userPrefix"></param>
-		/// <param name="index"></param>
-		/// <returns></returns>
-		public static string GetInstanceOutputName(string partName, string[] userPrefix, int index)
-		{
-			string prefix = null;
-			if(userPrefix == null || userPrefix.Length == 0)
-			{
-				prefix = partName;
-			}
-			else if(userPrefix.Length == 1)
-			{
-				prefix = userPrefix[0];
-			}
-			else if(index >= 0 && (index <= userPrefix.Length))
-			{
-				prefix = userPrefix[index - 1];
-			}
-			return prefix + HEU_Defines.HEU_INSTANCE + index;
 		}
 
 		public HEU_Curve GetCurve(bool bEditableOnly)
@@ -1088,12 +1071,15 @@ namespace HoudiniEngineUnity
 			}
 			else
 			{
-				MeshRenderer partMeshRenderer = OutputGameObject.GetComponent<MeshRenderer>();
-				if (partMeshRenderer != null)
+				if (OutputGameObject != null)
 				{
-					bEnabled = partMeshRenderer.enabled;
+					MeshRenderer partMeshRenderer = OutputGameObject.GetComponent<MeshRenderer>();
+					if (partMeshRenderer != null)
+					{
+						bEnabled = partMeshRenderer.enabled;
+					}
+					HEU_GeneralUtility.SetGameObjectColliderState(OutputGameObject, bEnabled);
 				}
-				HEU_GeneralUtility.SetGameObjectColliderState(OutputGameObject, bEnabled);
 			}
 		}
 
@@ -1533,7 +1519,7 @@ namespace HoudiniEngineUnity
 
 			Transform targetTransform = targetGO.transform;
 
-			if (IsPartInstancer() || IsObjectInstancer())
+			if (IsPartInstancer() || IsObjectInstancer() || IsAttribInstancer())
 			{
 				// Instancer
 
@@ -1712,7 +1698,7 @@ namespace HoudiniEngineUnity
 						HEU_GenerateGeoCache.UpdateCollider(geoCache, _generatedOutput._outputData._gameObject);
 					}
 				}
-				else if(IsPartInstancer() || IsObjectInstancer())
+				else if(IsPartInstancer() || IsObjectInstancer() || IsAttribInstancer())
 				{
 					// Always returning true for meshes without geometry that are instancers. These
 					// are handled after this.
@@ -1720,11 +1706,10 @@ namespace HoudiniEngineUnity
 				}
 				else
 				{
-					// No geometry -> return false to clean up
+					// No geometry -> default case is to return false to clean up
 					bResult = false;
 				}
 
-				
 				return bResult;
 			}
 		}
@@ -1912,6 +1897,7 @@ namespace HoudiniEngineUnity
 
 				string objectName = ParentGeoNode.ObjectNode != null ? ParentGeoNode.ObjectNode.ObjectName : "";
 				string assetPathName = string.Format("Asset_{0}_{1}_{2}_TerrainData.asset", objectName, ParentGeoNode.GeoName, PartID);
+				//Debug.Log("Saving terrain data: " + assetPathName);
 				ParentAsset.AddToAssetDBCache(assetPathName, terrainData, ref _assetDBTerrainData);
 			}
 		}

@@ -642,9 +642,9 @@ namespace HoudiniEngineUnity
 
 				string statusMessage = GetStatusString(HAPI_StatusType.HAPI_STATUS_CALL_RESULT, HAPI_StatusVerbosity.HAPI_STATUSVERBOSITY_WARNINGS);
 				string errorMsg = string.Format("{0} : {1}\nIf session is invalid, try restarting Unity.", prependMsg, statusMessage);
-				SetSessionErrorMsg(errorMsg, bLogError); ;
+				SetSessionErrorMsg(errorMsg, LogErrorOverride && bLogError); ;
 
-				if (bThrowError)
+				if (ThrowErrorOverride && bThrowError)
 				{
 					throw new HEU_HoudiniEngineError(errorMsg);
 				}
@@ -665,6 +665,8 @@ namespace HoudiniEngineUnity
 		{
 			// In keeping consistency with other plugins, we don't support splitting by groups or attributes.
 			cookOptions.splitGeosByGroup = false;
+			cookOptions.splitGeosByAttribute = false;
+			cookOptions.splitAttrSH = 0;
 			cookOptions.splitPointsByVertexAttributes = false;
 
 			cookOptions.cookTemplatedGeos = HEU_PluginSettings.CookTemplatedGeos;
@@ -1112,10 +1114,7 @@ namespace HoudiniEngineUnity
 		/// <returns>True if successfully retrieved the child node list</returns>
 		public override bool GetComposedChildNodeList(HAPI_NodeId parentNodeID, HAPI_NodeId[] childNodeIDs, int count)
 		{
-			if (childNodeIDs == null)
-			{
-				childNodeIDs = new HAPI_NodeId[count];
-			}
+			Debug.Assert(childNodeIDs != null && childNodeIDs.Length == count, "Child node IDs array not set to correct size!");
 			HAPI_Result result = HEU_HAPIImports.HAPI_GetComposedChildNodeList(ref _sessionData._HAPISession, parentNodeID, childNodeIDs, count);
 			HandleStatusResult(result, "Getting Child Node List", false, true);
 			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
@@ -1609,6 +1608,13 @@ namespace HoudiniEngineUnity
 			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
 		}
 
+		public override bool DeleteGroup(HAPI_NodeId nodeID, HAPI_PartId partID, HAPI_GroupType groupType, string groupName)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_DeleteGroup(ref _sessionData._HAPISession, nodeID, partID, groupType, groupName);
+			HandleStatusResult(result, "Deleting Group", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
+
 		public override bool SetGroupMembership(HAPI_NodeId nodeID, HAPI_PartId partID, HAPI_GroupType groupType, string groupName, [Out] int[] membershipArray, int start, int length)
 		{
 			HAPI_Result result = HEU_HAPIImports.HAPI_SetGroupMembership(ref _sessionData._HAPISession, nodeID, partID, groupType, groupName, membershipArray, start, length);
@@ -2050,6 +2056,41 @@ namespace HoudiniEngineUnity
 		}
 
 		// CACHING ----------------------------------------------------------------------------------------------------
+
+		public override bool GetActiveCacheCount(out int activeCacheCount)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_GetActiveCacheCount(ref _sessionData._HAPISession, out activeCacheCount);
+			HandleStatusResult(result, "Getting Active Cache Count", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
+
+		public override bool GetActiveCacheNames([Out] HAPI_StringHandle[] cacheNamesArray, int activeCacheCount)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_GetActiveCacheNames(ref _sessionData._HAPISession, cacheNamesArray, activeCacheCount);
+			HandleStatusResult(result, "Getting Active Cache Names", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
+
+		public override bool GetCacheProperty(string cacheName, HAPI_CacheProperty cacheProperty, out int propertyValue)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_GetCacheProperty(ref _sessionData._HAPISession, cacheName, cacheProperty, out propertyValue);
+			HandleStatusResult(result, "Getting Cache Property", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
+
+		public override bool SetCacheProperty(string cacheName, HAPI_CacheProperty cacheProperty, int propertyValue)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_SetCacheProperty(ref _sessionData._HAPISession, cacheName, cacheProperty, propertyValue);
+			HandleStatusResult(result, "Setting Cache Property", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
+
+		public override bool SaveGeoToFile(HAPI_NodeId nodeID, string fileName)
+		{
+			HAPI_Result result = HEU_HAPIImports.HAPI_SaveGeoToFile(ref _sessionData._HAPISession, nodeID, fileName);
+			HandleStatusResult(result, "Saving Geo File", false, true);
+			return (result == HAPI_Result.HAPI_RESULT_SUCCESS);
+		}
 
 		public override bool LoadGeoFromFile(HAPI_NodeId nodeID, string file_name)
 		{

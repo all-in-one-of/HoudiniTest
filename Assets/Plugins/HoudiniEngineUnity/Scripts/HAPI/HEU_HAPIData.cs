@@ -299,14 +299,13 @@ namespace HoudiniEngineUnity
 		HAPI_NODETYPE_NONE = 0,
 		HAPI_NODETYPE_OBJ = 1 << 0,
 		HAPI_NODETYPE_SOP = 1 << 1,
-		HAPI_NODETYPE_POP = 1 << 2,
-		HAPI_NODETYPE_CHOP = 1 << 3,
-		HAPI_NODETYPE_ROP = 1 << 4,
-		HAPI_NODETYPE_SHOP = 1 << 5,
-		HAPI_NODETYPE_COP = 1 << 6,
-		HAPI_NODETYPE_VOP = 1 << 7,
-		HAPI_NODETYPE_DOP = 1 << 8,
-		HAPI_NODETYPE_TOP = 1 << 9
+		HAPI_NODETYPE_CHOP = 1 << 2,
+		HAPI_NODETYPE_ROP = 1 << 3,
+		HAPI_NODETYPE_SHOP = 1 << 4,
+		HAPI_NODETYPE_COP = 1 << 5,
+		HAPI_NODETYPE_VOP = 1 << 6,
+		HAPI_NODETYPE_DOP = 1 << 7,
+		HAPI_NODETYPE_TOP = 1 << 8
 	};
 
 	[Flags]
@@ -329,7 +328,11 @@ namespace HoudiniEngineUnity
 		HAPI_NODEFLAGS_OBJ_SUBNET = 1 << 10,
 
 		/// SOP Node Specific Flags
-		HAPI_NODEFLAGS_SOP_CURVE = 1 << 11
+		HAPI_NODEFLAGS_SOP_CURVE = 1 << 11,
+		HAPI_NODEFLAGS_SOP_GUIDE = 1 << 12,
+
+		/// TOP Node Specific Flags
+		HAPI_NODEFLAGS_TOP_NONSCHEDULER = 1 << 13
 	};
 
 	public enum HAPI_GroupType
@@ -583,36 +586,29 @@ namespace HoudiniEngineUnity
 	};
 
 	/// Used with PDG functions
-	public enum HAPI_PDG_CookType
-	{
-		HAPI_PDG_COOK_FULL,
-		HAPI_PDG_COOK_NODE,
-		HAPI_PDG_COOK_NODEGEN,
-		HAPI_PDG_COOK_STATICDEP_FULL,
-		HAPI_PDG_COOK_STATICDEP_NODE
-	};
-
-	/// Used with PDG functions
 	public enum HAPI_PDG_EventType
 	{
-		HAPI_PDG_EVENT_NULL,
+		HAPI_PDG_EVENT_NULL						= 0x0000,
 
-		HAPI_PDG_EVENT_WORKITEM_ADD,
-		HAPI_PDG_EVENT_WORKITEM_REMOVE,
-		HAPI_PDG_EVENT_WORKITEM_STATE_CHANGE,
+		HAPI_PDG_EVENT_WORKITEM_ADD				= 0x0001,
+		HAPI_PDG_EVENT_WORKITEM_REMOVE			= 0x0002,
+		HAPI_PDG_EVENT_WORKITEM_STATE_CHANGE	= 0x0004,
 
-		HAPI_PDG_EVENT_WORKITEM_ADD_DEP,
-		HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP,
+		HAPI_PDG_EVENT_WORKITEM_ADD_DEP			= 0x0008,
+		HAPI_PDG_EVENT_WORKITEM_REMOVE_DEP		= 0x0010,
 
-		HAPI_PDG_EVENT_WORKITEM_ADD_PARENT,
-		HAPI_PDG_EVENT_WORKITEM_REMOVE_PARENT,
+		HAPI_PDG_EVENT_WORKITEM_ADD_PARENT		= 0x0020,
+		HAPI_PDG_EVENT_WORKITEM_REMOVE_PARENT	= 0x0040,
 
-		HAPI_PDG_EVENT_NODE_CLEAR,
+		HAPI_PDG_EVENT_NODE_CLEAR				= 0x0080,
 
-		HAPI_PDG_EVENT_COOK_ERROR,
-		HAPI_PDG_EVENT_COOK_WARNING,
+		HAPI_PDG_EVENT_DIRTY_START				= 0x0800,
+		HAPI_PDG_EVENT_DIRTY_STOP				= 0x1000,
 
-		HAPI_PDG_EVENT_COOK_COMPLETE
+		HAPI_PDG_EVENT_COOK_ERROR				= 0x0100,
+		HAPI_PDG_EVENT_COOK_WARNING				= 0x0200,
+
+		HAPI_PDG_EVENT_COOK_COMPLETE			= 0x0400
 	};
 
 	/// Used with PDG functions
@@ -852,7 +848,18 @@ namespace HoudiniEngineUnity
 		/// set to false, geos will only be split by primtive type.
 		[MarshalAs(UnmanagedType.U1)]
 		public bool splitGeosByGroup;
-
+		
+		/// This toggle lets you enable the splitting by unique values
+		/// of a specified attribute. By default, this is false and
+		/// the geo be split as described above.
+		/// as described above. If this is set to true, and  splitGeosByGroup
+		/// set to false, mesh geos will be split on attribute values
+		/// The attribute name to split on must be created with HAPI_SetCustomString
+		/// and then the splitAttrSH handle set on the struct.
+		[MarshalAs(UnmanagedType.U1)]
+		public bool splitGeosByAttribute;
+		public HAPI_StringHandle splitAttrSH;
+		
 		/// For meshes only, this is enforced by convexing the mesh. Use -1
 		/// to avoid convexing at all and get some performance boost.
 		public int maxVerticesPerPrimitive;
@@ -1529,6 +1536,7 @@ namespace HoudiniEngineUnity
 	public struct HAPI_PDG_WorkitemResultInfo
 	{
 		public int resultSH;                /// result string
+		public int resultTagSH;				/// result tag
 		public HAPI_Int64 resultHash;       /// hash value of result
 	};
 }   // HoudiniEngineUnity

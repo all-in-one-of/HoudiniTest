@@ -112,7 +112,7 @@ namespace HoudiniEngineUnity
 		{
 			get
 			{
-				bool bValue = false;
+				bool bValue = true;
 				HEU_PluginStorage.Instance.Get("HAPI_TransformChangeTriggersCooks", out bValue, bValue);
 				return bValue;
 			}
@@ -720,6 +720,20 @@ namespace HoudiniEngineUnity
 			set
 			{
 				HEU_PluginStorage.Instance.Set("HEU_HoudiniDebugLaunchPath", value);
+			}
+		}
+
+		public static string LastExportPath
+		{
+			get
+			{
+				string path = "";
+				HEU_PluginStorage.Instance.Get("HAPI_LastExportPath", out path, path);
+				return path;
+			}
+			set
+			{
+				HEU_PluginStorage.Instance.Set("HAPI_LastExportPath", value);
 			}
 		}
 	}

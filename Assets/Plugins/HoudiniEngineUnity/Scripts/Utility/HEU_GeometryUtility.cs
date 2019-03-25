@@ -182,14 +182,10 @@ namespace HoudiniEngineUnity
 				// The height values will be mapped over this terrain size.
 				float gridSpacingX = scale.x * 2f;
 				float gridSpacingY = scale.y * 2f;
-				//float gridSpacingZ = scale.z * 2f;
-				float multiplierOffsetX = Mathf.Round(scale.x);
-				float multiplierOffsetY = Mathf.Round(scale.y);
-				//float multiplierOffsetZ = Mathf.Round(scale.z);
-				float terrainSizeX = Mathf.Round(volumeInfo.xLength * gridSpacingX - multiplierOffsetX);
-				float terrainSizeY = Mathf.Round(volumeInfo.yLength * gridSpacingY - multiplierOffsetY);
+				float terrainSizeX = Mathf.Round((volumeInfo.xLength - 1) * gridSpacingX);
+				float terrainSizeY = Mathf.Round((volumeInfo.yLength - 1) * gridSpacingY);
 
-				//Debug.LogFormat("GS = {0},{1},{2}. SX = {1}. SY = {2}", gridSpacingX, gridSpacingY, gridSpacingZ, terrainSizeX, terrainSizeY);
+				//Debug.LogFormat("GS = {0},{1},{2}. SX = {1}. SY = {2}", gridSpacingX, gridSpacingY, terrainSizeX, terrainSizeY);
 
 				//Debug.LogFormat("HeightField Pos:{0}, Scale:{1}", position, scale.ToString("{0.00}"));
 				//Debug.LogFormat("HeightField tileSize:{0}, xLength:{1}, yLength:{2}", volumeInfo.tileSize.ToString("{0.00}"), volumeInfo.xLength.ToString("{0.00}"), volumeInfo.yLength.ToString("{0.00}"));
@@ -233,29 +229,13 @@ namespace HoudiniEngineUnity
 				}
 
 				// Get the height values from Houdini and find the min and max height range.
-				int totalHeightValues = volumeInfo.xLength * volumeInfo.yLength;
-				float[] heightValues = new float[totalHeightValues];
-
-				bool bResult = HEU_GeneralUtility.GetArray2Arg(geoID, partID, session.GetHeightFieldData, heightValues, 0, totalHeightValues);
-				if (!bResult)
+				float minHeight = 0;
+				float maxHeight = 0;
+				float[] heightValues = null;
+				if (!GetHeightfieldValues(session, volumeInfo.xLength, volumeInfo.yLength, geoID, partID, ref heightValues, ref minHeight, ref maxHeight))
 				{
 					return false;
 				}
-
-				float minHeight = heightValues[0];
-				float maxHeight = minHeight;
-				for (int i = 0; i < totalHeightValues; ++i)
-				{
-					float f = heightValues[i];
-					if (f > maxHeight)
-					{
-						maxHeight = f;
-					}
-					else if (f < minHeight)
-					{
-						minHeight = f;
-					}
-				} 
 
 				const int UNITY_MAX_HEIGHT_RANGE = 65536;
 				float heightRange = (maxHeight - minHeight);
@@ -315,7 +295,7 @@ namespace HoudiniEngineUnity
 				// Note SetHeights must be called before setting size in next line, as otherwise
 				// the internal terrain size will not change after setting the size.
 				terrainData.SetHeights(0, 0, unityHeights);
-
+				
 				terrainData.size = new Vector3(terrainSizeX, heightRange, terrainSizeY);
 
 				terrain.Flush();
@@ -347,6 +327,201 @@ namespace HoudiniEngineUnity
 			}
 
 			return false;
+		}
+
+		/// <summary>
+		/// Retrieves the height values from Houdini for the given volume part.
+		/// </summary>
+		public static float[] GetHeightfieldFromPart(HEU_SessionBase session, HAPI_NodeId geoID, HAPI_PartId partID, string partName, int terrainSize)
+		{
+			HAPI_VolumeInfo volumeInfo = new HAPI_VolumeInfo();
+			bool bResult = session.GetVolumeInfo(geoID, partID, ref volumeInfo);
+			if (!bResult)
+			{
+				return null;
+			}
+
+			int volumeXLength = volumeInfo.xLength;
+			int volumeYLength = volumeInfo.yLength;
+
+			// Number of heightfield values
+			int totalHeightValues = volumeXLength * volumeYLength;
+
+			float minHeight = float.MaxValue;
+			float maxHeight = float.MinValue;
+			float[] heightValues = new float[totalHeightValues];
+			if (!GetHeightfieldValues(session, volumeXLength, volumeYLength, geoID, partID, ref heightValues, ref minHeight, ref maxHeight))
+			{
+				return null;
+			}
+
+			float heightRange = (maxHeight - minHeight);
+			if (heightRange == 0f)
+			{
+				heightRange = 1f;
+			}
+			//Debug.LogFormat("{0} : {1}", HEU_SessionManager.GetString(volumeInfo.nameSH, session), heightRange);
+
+			// Remap height values to fit terrain size
+			int paddingWidth = terrainSize - volumeXLength;
+			int paddingLeft = Mathf.CeilToInt(paddingWidth * 0.5f);
+			int paddingRight = terrainSize - paddingLeft;
+			//Debug.LogFormat("Padding: Width={0}, Left={1}, Right={2}", paddingWidth, paddingLeft, paddingRight);
+
+			int paddingHeight = terrainSize - volumeYLength;
+			int paddingTop = Mathf.CeilToInt(paddingHeight * 0.5f);
+			int paddingBottom = terrainSize - paddingTop;
+			//Debug.LogFormat("Padding: Height={0}, Top={1}, Bottom={2}", paddingHeight, paddingTop, paddingBottom);
+
+			// Set height values at centre of the terrain, with padding on the sides if we resized
+			float[] resizedHeightValues = new float[terrainSize * terrainSize];
+			for (int y = 0; y < terrainSize; ++y)
+			{
+				for (int x = 0; x < terrainSize; ++x)
+				{
+					if (y >= paddingTop && y < (paddingBottom) && x >= paddingLeft && x < (paddingRight))
+					{
+						int ay = x - paddingLeft;
+						int ax = y - paddingTop;
+
+						float f = heightValues[ay + ax * volumeXLength] - minHeight;
+						f /= heightRange;
+
+						// Flip for right-hand to left-handed coordinate system
+						int ix = x;
+						int iy = terrainSize - (y + 1);
+
+						// Unity expects height array indexing to be [y, x].
+						resizedHeightValues[iy + ix * terrainSize] = f;
+					}
+				}
+			}
+
+			return resizedHeightValues;
+		}
+
+		/// <summary>
+		/// Retrieve the height values from Houdini for given part (volume), along with min and max height values.
+		/// </summary>
+		public static bool GetHeightfieldValues(HEU_SessionBase session, int xLength, int yLength, HAPI_NodeId geoID, HAPI_PartId partID,
+			ref float[] heightValues, ref float minHeight, ref float maxHeight)
+		{
+			// Get the height values from Houdini and find the min and max height range.
+			int totalHeightValues = xLength * yLength;
+			heightValues = new float[totalHeightValues];
+
+			bool bResult = HEU_GeneralUtility.GetArray2Arg(geoID, partID, session.GetHeightFieldData, heightValues, 0, totalHeightValues);
+			if (!bResult)
+			{
+				return false;
+			}
+
+			minHeight = heightValues[0];
+			maxHeight = minHeight;
+			for (int i = 0; i < totalHeightValues; ++i)
+			{
+				float f = heightValues[i];
+				if (f > maxHeight)
+				{
+					maxHeight = f;
+				}
+				else if (f < minHeight)
+				{
+					minHeight = f;
+				}
+			}
+
+			return true;
+		}
+
+		/// <summary>
+		/// Convert the given heightfield values linear array into multidimensional array that Unity
+		/// requires for terrain heightmap. Also normalizes the height values (since Unity expects that)
+		/// and does Houdini to Unity coordinate system conversion.
+		/// </summary>
+		public static float[,] ConvertHeightMapHoudiniToUnity(int terrainSize, float[] heightValues, float minHeight, float maxHeight)
+		{
+			float heightRange = (maxHeight - minHeight);
+
+			float[,] unityHeights = new float[terrainSize, terrainSize];
+			for (int y = 0; y < terrainSize; ++y)
+			{
+				for (int x = 0; x < terrainSize; ++x)
+				{
+					int ay = x;
+					int ax = y;
+
+					// Unity expects normalized height values
+					float h = heightValues[ay + ax * terrainSize] - minHeight;
+					float f = h / heightRange;
+
+					// Flip for right-hand to left-handed coordinate system
+					int ix = x;
+					int iy = terrainSize - (y + 1);
+
+					// Unity expects height array indexing to be [y, x].
+					unityHeights[ix, iy] = f;
+				}
+			}
+
+			return unityHeights;
+		}
+
+		/// <summary>
+		/// Convert the given heightfields linear list into multidimensional array that Unity
+		/// needs for uploading height splatmap values. Does Houdini to Unity coordinate system conversion.
+		/// </summary>
+		public static float[,,] ConvertHeightSplatMapHoudiniToUnity(int heightMapSize, List<float[]> heightFields)
+		{
+			// Total maps is masks plus base height layer
+			int numMaps = heightFields.Count + 1;
+
+			// Assign floats to alpha map
+			float[,,] alphamap = new float[heightMapSize, heightMapSize, numMaps];
+			for (int y = 0; y < heightMapSize; ++y)
+			{
+				for (int x = 0; x < heightMapSize; ++x)
+				{
+					float f = 0f;
+
+					// Flip for right-hand to left-handed coordinate system
+					int ix = x;
+					int iy = heightMapSize - (y + 1);
+
+					for (int m = numMaps - 1; m > 0; --m)
+					{
+						float a = heightFields[m - 1][x + heightMapSize * y];
+						a = Mathf.Clamp01(a - f);
+
+						alphamap[ix, iy, m] = a;
+
+						f += a;
+					}
+
+					// Base layer gets leftover value
+					alphamap[ix, iy, 0] = Mathf.Clamp01(1.0f - f);
+				}
+			}
+
+			return alphamap;
+		}
+
+		/// <summary>
+		/// Get the volume position offset based on volume dimensions and bounds.
+		/// </summary>
+		public static Vector3 GetVolumePositionOffset(HEU_SessionBase session, HAPI_NodeId geoID, HAPI_PartId partID, 
+			Vector3 volumePosition, float terrainSizeX, float heightMapSize, int mapWidth, int mapHeight, float minHeight)
+		{
+			// Use volume bounds to set position offset when using split tiles
+			float xmin, xmax, zmin, zmax, ymin, ymax, xcenter, ycenter, zcenter;
+			session.GetVolumeBounds(geoID, partID, out xmin, out ymin, out zmin, out xmax, out ymax, out zmax, out xcenter,
+				out ycenter, out zcenter);
+
+			// Offset position is based on size of heightfield
+			float offsetX = (float)heightMapSize / (float)mapWidth;
+			float offsetZ = (float)heightMapSize / (float)mapHeight;
+
+			return new Vector3((terrainSizeX + xmin) * offsetX, minHeight + volumePosition.y, zmin * offsetZ);
 		}
 
 		/// <summary>
@@ -488,6 +663,33 @@ namespace HoudiniEngineUnity
 			mesh.SetIndices(indices, MeshTopology.Quads, 0);
 
 			return mesh;
+		}
+
+		/// <summary>
+		/// Returns the output instance's name for given instance index. 
+		/// The instance name convention is: PartName_Instance1
+		/// User could override the prefix (PartName) with their own via given instancePrefixes array.
+		/// </summary>
+		/// <param name="partName"></param>
+		/// <param name="userPrefix"></param>
+		/// <param name="index"></param>
+		/// <returns></returns>
+		public static string GetInstanceOutputName(string partName, string[] userPrefix, int index)
+		{
+			string prefix = null;
+			if (userPrefix == null || userPrefix.Length == 0)
+			{
+				prefix = partName;
+			}
+			else if (userPrefix.Length == 1)
+			{
+				prefix = userPrefix[0];
+			}
+			else if (index >= 0 && (index <= userPrefix.Length))
+			{
+				prefix = userPrefix[index - 1];
+			}
+			return prefix + HEU_Defines.HEU_INSTANCE + index;
 		}
 	}
 

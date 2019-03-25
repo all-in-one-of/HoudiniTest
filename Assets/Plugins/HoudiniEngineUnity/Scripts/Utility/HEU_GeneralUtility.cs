@@ -992,6 +992,11 @@ namespace HoudiniEngineUnity
 			}
 		}
 
+		/// <summary>
+		/// Set the gameobject's collider state
+		/// </summary>
+		/// <param name="gameObject">The gameobject's collider will be set to bEnabled</param>
+		/// <param name="bEnabled">Collider enabled state</param>
 		public static void SetGameObjectColliderState(GameObject gameObject, bool bEnabled)
 		{
 			if (gameObject != null)
@@ -1000,6 +1005,26 @@ namespace HoudiniEngineUnity
 				if (partMeshCollider != null)
 				{
 					partMeshCollider.enabled = bEnabled;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Set the given gameobject childrens' collision state.
+		/// </summary>
+		/// <param name="gameObject">The gameobject's children to set the collder state</param>
+		/// <param name="bVisible">Collider enabled state</param>
+		public static void SetGameObjectChildrenColliderState(GameObject gameObject, bool bVisible)
+		{
+			if (gameObject != null)
+			{
+				Collider[] childColliders = gameObject.GetComponentsInChildren<Collider>();
+				if (childColliders != null)
+				{
+					foreach (Collider collider in childColliders)
+					{
+						collider.enabled = bVisible;
+					}
 				}
 			}
 		}
@@ -1387,6 +1412,28 @@ namespace HoudiniEngineUnity
 		}
 
 		/// <summary>
+		/// Returns a new texture with given size, and filled in with given single color.
+		/// </summary>
+		public static Texture2D MakeTexture(int width, int height, Color color)
+		{
+			if (width <= 0 || height <= 0)
+			{
+				return null;
+			}
+
+			Color[] pixels = new Color[width * height];
+			for(int i = 0; i < pixels.Length; ++i)
+			{
+				pixels[i] = color;
+			}
+
+			Texture2D texture = new Texture2D(width, height);
+			texture.SetPixels(pixels);
+			texture.Apply(false, true);
+			return texture;
+		}
+
+		/// <summary>
 		/// Replace the first occurence of searchStr in srcStr with replaceStr.
 		/// </summary>
 		/// <param name="srcStr"></param>
@@ -1401,6 +1448,17 @@ namespace HoudiniEngineUnity
 				return srcStr;
 			}
 			return srcStr.Substring(0, index) + replaceStr + srcStr.Substring(index + searchStr.Length);
+		}
+
+		/// <summary>
+		/// Sets given childTransform parented to the given parentTransform, with clean (identity) transform matrix.
+		/// </summary>
+		public static void SetParentWithCleanTransform(Transform parentTransform, Transform childTransform)
+		{
+			childTransform.parent = parentTransform;
+			childTransform.localPosition = Vector3.zero;
+			childTransform.localRotation = Quaternion.identity;
+			childTransform.localScale = Vector3.one;
 		}
 	}
 
